@@ -27,7 +27,10 @@ class DSHDoorbell(FileTouchDoorbell):
                 with open(inject_servers_file, "r", encoding="utf-8") as f:
                     servers = json.load(f)
                 if isinstance(servers, list):
-                    for server in servers:
+                    # Sort by startedAt descending so most recent session is prioritized
+                    sorted_servers = sorted(servers, key=lambda x: x.get("startedAt", 0), reverse=True)
+                    delivered_any = False
+                    for server in sorted_servers:
                         pid = server.get("pid")
                         sock_p = server.get("socketPath")
                         if pid and sock_p and Path(sock_p).exists():
@@ -44,9 +47,11 @@ class DSHDoorbell(FileTouchDoorbell):
                                 s.sendall((json.dumps({"type": "prompt.append", "text": prompt_text}) + "\n").encode("utf-8"))
                                 s.sendall((json.dumps({"type": "command.execute", "command": "prompt.submit"}) + "\n").encode("utf-8"))
                                 s.close()
-                                return True
+                                delivered_any = True
                             except Exception:
                                 pass
+                    if delivered_any:
+                        return True
             except Exception:
                 pass
 
