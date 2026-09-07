@@ -65,7 +65,7 @@ Existing orchestration tools rely on fragile PTY keyboard simulation (frequently
 Clone and run the installer:
 
 ```bash
-git clone https://github.com/your-username/agent-bus-mcp.git
+git clone https://github.com/tulong66/agent-bus-mcp.git
 cd agent-bus-mcp
 ./install.sh
 ```
