@@ -159,7 +159,7 @@ class MCPServer:
             },
             {
                 "name": "bus_wait_message",
-                "description": "Long-poll and wait for an incoming message on the bus. Blocks until a message arrives or timeout expires. Eliminates terminal polling.",
+                "description": "Long-poll and wait for an incoming message on the bus (up to 45s, safely below client timeout). Returns status 'received' or 'timeout'. Eliminates terminal polling.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -169,8 +169,8 @@ class MCPServer:
                         },
                         "timeout": {
                             "type": "integer",
-                            "description": "Maximum wait time in seconds (default 300, max 600)",
-                            "default": 300
+                            "description": "Maximum wait time in seconds (default 30, max 45 to protect client RPC timeout)",
+                            "default": 30
                         },
                         "mark_read": {
                             "type": "boolean",
@@ -278,10 +278,19 @@ class MCPServer:
             mark_read = args.get("mark_read", True)
             limit = int(args.get("limit", 10))
             wait = bool(args.get("wait", False))
-            timeout = min(int(args.get("timeout", 60)), 300)
+            timeout = min(max(1, int(args.get("timeout", 30))), 45)
 
             if not agent_name:
                 return {"error": "Missing 'agent_name'"}
+
+            if not wait:
+                msgs = self.db.fetch_inbox(
+                    agent_name=agent_name,
+                    unread_only=unread_only,
+                    mark_read=mark_read,
+                    limit=limit
+                )
+                return {"messages": msgs, "count": len(msgs)}
 
             start_t = time.time()
             while True:
@@ -291,13 +300,13 @@ class MCPServer:
                     mark_read=mark_read,
                     limit=limit
                 )
-                if msgs or not wait or (time.time() - start_t >= timeout):
+                if msgs or (time.time() - start_t >= timeout):
                     return {"messages": msgs, "count": len(msgs)}
                 time.sleep(0.2)
 
         elif name == "bus_wait_message":
             agent_name = args.get("agent_name") or getattr(self, "current_agent_id", "")
-            timeout = min(int(args.get("timeout", 300)), 600)
+            timeout = min(max(1, int(args.get("timeout", 30))), 45)
             mark_read = bool(args.get("mark_read", True))
 
             if not agent_name:

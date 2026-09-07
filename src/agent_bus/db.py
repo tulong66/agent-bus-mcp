@@ -5,6 +5,7 @@ Uses SQLite with WAL mode for fast, concurrent, ACID transactions.
 
 import sqlite3
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
@@ -17,10 +18,15 @@ class Database:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.init_schema()
 
-    def get_connection(self) -> sqlite3.Connection:
+    @contextmanager
+    def get_connection(self):
         conn = sqlite3.connect(self.db_path, timeout=15.0)
         conn.row_factory = sqlite3.Row
-        return conn
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     def init_schema(self) -> None:
         with self.get_connection() as conn:
