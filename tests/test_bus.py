@@ -210,3 +210,34 @@ def test_bus_wait_message(temp_db):
     assert res_obj["status"] == "received"
     assert len(res_obj["messages"]) == 1
     assert res_obj["messages"][0]["content"] == "Delayed message"
+
+
+def test_dsh_auto_registration_and_defaults(temp_db, monkeypatch):
+    monkeypatch.setenv("AGENT_BUS_AGENT_ID", "deepseek-coder")
+    monkeypatch.setenv("AGENT_BUS_FRAMEWORK", "dsh")
+    server = MCPServer(db=temp_db)
+    assert server.current_agent_id == "deepseek-coder"
+    agent = temp_db.get_agent("deepseek-coder")
+    assert agent is not None
+    assert agent["framework"] == "dsh"
+    assert agent["doorbell_type"] == "dsh"
+
+    # Default from_agent in bus_send
+    call_resp = server.handle_request({
+        "jsonrpc": "2.0",
+        "id": 10,
+        "method": "tools/call",
+        "params": {
+            "name": "bus_send",
+            "arguments": {
+                "to": "antigravity-lead",
+                "content": "Message from DSH"
+            }
+        }
+    })
+    assert call_resp["result"]["isError"] is False
+    inbox = temp_db.fetch_inbox("antigravity-lead", unread_only=True)
+    assert len(inbox) == 1
+    assert inbox[0]["from"] == "deepseek-coder"
+    assert inbox[0]["content"] == "Message from DSH"
+

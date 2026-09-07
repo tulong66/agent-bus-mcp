@@ -13,7 +13,10 @@ class FileTouchDoorbell(BaseDoorbell):
         agent_id = agent_info["agent_id"]
         target = agent_info.get("doorbell_target")
         
-        bell_path = Path(target) if target else (Path.home() / ".agent-bus" / "doorbells" / f"{agent_id}.bell")
+        if target and not target.startswith("{"):
+            bell_path = Path(target)
+        else:
+            bell_path = Path.home() / ".agent-bus" / "doorbells" / f"{agent_id}.bell"
         inbox_path = Path.home() / ".agent-bus" / "inbox" / f"{agent_id}.msg"
 
         now_ts = time.time()

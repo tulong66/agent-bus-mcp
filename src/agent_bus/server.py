@@ -25,15 +25,31 @@ class MCPServer:
     def __init__(self, db: Optional[Database] = None):
         self.db = db or Database()
         self.doorbells = DoorbellManager()
+        self.current_agent_id = "anonymous"
         self._auto_register()
 
     def _auto_register(self):
         """Auto-detect host agent runtime environment and bind doorbell/identity."""
         try:
+            # 0. Explicit Environment Override
+            agent_id = os.environ.get("AGENT_BUS_AGENT_ID")
+            framework = os.environ.get("AGENT_BUS_FRAMEWORK")
+            if agent_id:
+                self.current_agent_id = agent_id
+                bell_path = Path.home() / ".agent-bus" / "doorbells" / f"{agent_id}.bell"
+                self.db.register_agent(
+                    agent_id=agent_id,
+                    framework=framework or "custom",
+                    doorbell_type="dsh" if "dsh" in (framework or "") else "file",
+                    doorbell_target=str(bell_path)
+                )
+                return
+
             # 1. Claude Code Detection (UDS Socket + Token)
             cc_sock = os.environ.get("CLAUDE_CODE_MESSAGING_SOCKET")
             cc_token = os.environ.get("CLAUDE_CODE_MESSAGING_TOKEN")
             if cc_sock and os.path.exists(cc_sock):
+                self.current_agent_id = "coordinator"
                 target = json.dumps({"socket": cc_sock, "token": cc_token or ""})
                 self.db.register_agent(
                     agent_id="coordinator",
@@ -43,9 +59,22 @@ class MCPServer:
                 )
                 return
 
-            # 2. Antigravity Lead Detection
+            # 2. DeepSeek Harness (DSH) Detection
+            if "DSH_HOME" in os.environ or "DSH_TUI_PERSONA" in os.environ or "DSH_PROFILE" in os.environ:
+                self.current_agent_id = "deepseek-coder"
+                bell_path = Path.home() / ".agent-bus" / "doorbells" / "deepseek-coder.bell"
+                self.db.register_agent(
+                    agent_id="deepseek-coder",
+                    framework="dsh",
+                    doorbell_type="dsh",
+                    doorbell_target=str(bell_path)
+                )
+                return
+
+            # 3. Antigravity Lead Detection
             sc_custom = Path.home() / ".superconductor" / "hooks" / "antigravity-customization"
             if "ANTIGRAVITY" in os.environ or sc_custom.exists():
+                self.current_agent_id = "antigravity-lead"
                 bell_path = Path.home() / ".agent-bus" / "doorbells" / "antigravity-lead.bell"
                 self.db.register_agent(
                     agent_id="antigravity-lead",
@@ -218,7 +247,7 @@ class MCPServer:
             to_agent = args.get("to")
             content = args.get("content")
             topic = args.get("topic", "general")
-            from_agent = args.get("from_agent", "anonymous")
+            from_agent = args.get("from_agent") or getattr(self, "current_agent_id", "anonymous")
             conversation_id = args.get("conversation_id", "")
 
             if not to_agent or not content:
@@ -244,7 +273,7 @@ class MCPServer:
             return res
 
         elif name == "bus_inbox":
-            agent_name = args.get("agent_name")
+            agent_name = args.get("agent_name") or getattr(self, "current_agent_id", "")
             unread_only = args.get("unread_only", True)
             mark_read = args.get("mark_read", True)
             limit = int(args.get("limit", 10))
@@ -267,7 +296,7 @@ class MCPServer:
                 time.sleep(0.2)
 
         elif name == "bus_wait_message":
-            agent_name = args.get("agent_name")
+            agent_name = args.get("agent_name") or getattr(self, "current_agent_id", "")
             timeout = min(int(args.get("timeout", 300)), 600)
             mark_read = bool(args.get("mark_read", True))
 
