@@ -6,6 +6,7 @@ Implements Model Context Protocol (MCP) JSON-RPC 2.0 over stdio.
 
 import sys
 import os
+import time
 import json
 from typing import Dict, Any, Optional
 from pathlib import Path
@@ -24,6 +25,36 @@ class MCPServer:
     def __init__(self, db: Optional[Database] = None):
         self.db = db or Database()
         self.doorbells = DoorbellManager()
+        self._auto_register()
+
+    def _auto_register(self):
+        """Auto-detect host agent runtime environment and bind doorbell/identity."""
+        try:
+            # 1. Claude Code Detection (UDS Socket + Token)
+            cc_sock = os.environ.get("CLAUDE_CODE_MESSAGING_SOCKET")
+            cc_token = os.environ.get("CLAUDE_CODE_MESSAGING_TOKEN")
+            if cc_sock and os.path.exists(cc_sock):
+                target = json.dumps({"socket": cc_sock, "token": cc_token or ""})
+                self.db.register_agent(
+                    agent_id="coordinator",
+                    framework="claude-code",
+                    doorbell_type="claude",
+                    doorbell_target=target
+                )
+                return
+
+            # 2. Antigravity Lead Detection
+            sc_custom = Path.home() / ".superconductor" / "hooks" / "antigravity-customization"
+            if "ANTIGRAVITY" in os.environ or sc_custom.exists():
+                bell_path = Path.home() / ".agent-bus" / "doorbells" / "antigravity-lead.bell"
+                self.db.register_agent(
+                    agent_id="antigravity-lead",
+                    framework="antigravity",
+                    doorbell_type="file",
+                    doorbell_target=str(bell_path)
+                )
+        except Exception:
+            pass
 
     def get_tools_schema(self) -> list:
         return [
@@ -60,7 +91,7 @@ class MCPServer:
             },
             {
                 "name": "bus_inbox",
-                "description": "Fetch incoming messages for a specific agent from the persistent SQLite inbox.",
+                "description": "Fetch incoming messages for a specific agent from the persistent SQLite inbox. Supports optional blocking wait.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -82,6 +113,40 @@ class MCPServer:
                             "type": "integer",
                             "description": "Maximum number of messages to return",
                             "default": 10
+                        },
+                        "wait": {
+                            "type": "boolean",
+                            "description": "Whether to block waiting until at least one message arrives",
+                            "default": False
+                        },
+                        "timeout": {
+                            "type": "integer",
+                            "description": "Maximum wait time in seconds if wait is true (default 60)",
+                            "default": 60
+                        }
+                    },
+                    "required": ["agent_name"]
+                }
+            },
+            {
+                "name": "bus_wait_message",
+                "description": "Long-poll and wait for an incoming message on the bus. Blocks until a message arrives or timeout expires. Eliminates terminal polling.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "agent_name": {
+                            "type": "string",
+                            "description": "Your agent ID to wait for"
+                        },
+                        "timeout": {
+                            "type": "integer",
+                            "description": "Maximum wait time in seconds (default 300, max 600)",
+                            "default": 300
+                        },
+                        "mark_read": {
+                            "type": "boolean",
+                            "description": "Whether to mark the delivered messages as read",
+                            "default": True
                         }
                     },
                     "required": ["agent_name"]
@@ -135,12 +200,12 @@ class MCPServer:
                         },
                         "doorbell_type": {
                             "type": "string",
-                            "description": "Doorbell mechanism ('file', 'socket', 'signal')",
+                            "description": "Doorbell mechanism ('file', 'claude', 'socket', 'signal')",
                             "default": "file"
                         },
                         "doorbell_target": {
                             "type": "string",
-                            "description": "Target file or port for the doorbell"
+                            "description": "Target file, socket or port for the doorbell"
                         }
                     },
                     "required": ["agent_id"]
@@ -168,10 +233,13 @@ class MCPServer:
                 conversation_id=conversation_id
             )
 
-            # 2. Ring Doorbell
+            # 2. Ring Doorbell with metadata
             agent_info = self.db.get_agent(to_agent)
             if not agent_info:
                 agent_info = {"agent_id": to_agent, "framework": "generic", "doorbell_type": "file"}
+            agent_info = dict(agent_info)
+            agent_info["from_agent"] = from_agent
+            agent_info["topic"] = topic
             self.doorbells.ring(agent_info, content)
             return res
 
@@ -180,17 +248,45 @@ class MCPServer:
             unread_only = args.get("unread_only", True)
             mark_read = args.get("mark_read", True)
             limit = int(args.get("limit", 10))
+            wait = bool(args.get("wait", False))
+            timeout = min(int(args.get("timeout", 60)), 300)
 
             if not agent_name:
                 return {"error": "Missing 'agent_name'"}
 
-            msgs = self.db.fetch_inbox(
-                agent_name=agent_name,
-                unread_only=unread_only,
-                mark_read=mark_read,
-                limit=limit
-            )
-            return {"messages": msgs, "count": len(msgs)}
+            start_t = time.time()
+            while True:
+                msgs = self.db.fetch_inbox(
+                    agent_name=agent_name,
+                    unread_only=unread_only,
+                    mark_read=mark_read,
+                    limit=limit
+                )
+                if msgs or not wait or (time.time() - start_t >= timeout):
+                    return {"messages": msgs, "count": len(msgs)}
+                time.sleep(0.2)
+
+        elif name == "bus_wait_message":
+            agent_name = args.get("agent_name")
+            timeout = min(int(args.get("timeout", 300)), 600)
+            mark_read = bool(args.get("mark_read", True))
+
+            if not agent_name:
+                return {"error": "Missing 'agent_name'"}
+
+            start_t = time.time()
+            while time.time() - start_t < timeout:
+                msgs = self.db.fetch_inbox(
+                    agent_name=agent_name,
+                    unread_only=True,
+                    mark_read=mark_read,
+                    limit=10
+                )
+                if msgs:
+                    return {"status": "received", "messages": msgs, "count": len(msgs)}
+                time.sleep(0.2)
+
+            return {"status": "timeout", "messages": [], "count": 0}
 
         elif name == "bus_history":
             agent_a = args.get("agent_a")
@@ -231,13 +327,13 @@ class MCPServer:
                 "jsonrpc": "2.0",
                 "id": req_id,
                 "result": {
-                    "protocolVersion": "2024-11-05",
+                    "protocolVersion": req.get("params", {}).get("protocolVersion", "2024-11-05"),
                     "capabilities": {
                         "tools": {}
                     },
                     "serverInfo": {
                         "name": "agent-bus",
-                        "version": "1.0.0"
+                        "version": "1.1.0"
                     }
                 }
             }
@@ -298,6 +394,7 @@ class MCPServer:
             try:
                 req = json.loads(line)
                 if "id" not in req:
+                    # Ignore notifications gracefully
                     continue
                 resp = self.handle_request(req)
                 sys.stdout.write(json.dumps(resp, ensure_ascii=False) + "\n")
