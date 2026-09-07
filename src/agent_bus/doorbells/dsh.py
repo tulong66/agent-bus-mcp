@@ -43,7 +43,11 @@ class DSHDoorbell(FileTouchDoorbell):
                                 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                                 s.settimeout(2.0)
                                 s.connect(sock_p)
-                                prompt_text = f"收到来自 {from_agent} 的新消息（主题: {topic}）。请调用 bus_inbox(wait=false) 查收并处理。"
+                                prompt_text = (
+                                    f"【来自 {from_agent} 的消息】（主题: {topic}）\n\n"
+                                    f"{message_content}\n\n"
+                                    f"（提示：消息已直接注入当前上下文，无需调用 bus_inbox。完成后调用 bus_send(to='{from_agent}', message='...') 回复即可）"
+                                )
                                 s.sendall((json.dumps({"type": "prompt.append", "text": prompt_text}) + "\n").encode("utf-8"))
                                 s.sendall((json.dumps({"type": "command.execute", "command": "prompt.submit"}) + "\n").encode("utf-8"))
                                 s.close()

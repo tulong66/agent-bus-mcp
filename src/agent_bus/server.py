@@ -89,33 +89,33 @@ class MCPServer:
         return [
             {
                 "name": "bus_send",
-                "description": "Send a message to another agent on the universal agent bus. Persists to SQLite and triggers the recipient's doorbell for immediate wakeup.",
+                "description": "Send a message to another agent. Only 'to' and 'message' are required. The recipient is automatically woken up with message content injected directly into its active turn.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "to": {
                             "type": "string",
-                            "description": "Target agent name/id (e.g. 'coordinator', 'antigravity-lead', 'deepseek-coder')"
+                            "description": "Target agent ID (e.g. 'coordinator', 'deepseek-coder', 'antigravity-lead')"
+                        },
+                        "message": {
+                            "type": "string",
+                            "description": "Message content or instruction"
                         },
                         "content": {
                             "type": "string",
-                            "description": "Message content or structured report"
+                            "description": "Alias for message"
                         },
                         "topic": {
                             "type": "string",
-                            "description": "Short topic label (e.g. 'report', 'decision', 'greeting', 'task')",
+                            "description": "Optional short topic label (default: 'general')",
                             "default": "general"
                         },
                         "from_agent": {
                             "type": "string",
-                            "description": "Sender agent name/id (e.g. 'coordinator', 'antigravity-lead')"
-                        },
-                        "conversation_id": {
-                            "type": "string",
-                            "description": "Optional correlation or session ID"
+                            "description": "Optional sender agent ID (auto-detected if omitted)"
                         }
                     },
-                    "required": ["to", "content"]
+                    "required": ["to"]
                 }
             },
             {
@@ -245,13 +245,13 @@ class MCPServer:
     def handle_tool_call(self, name: str, args: dict) -> dict:
         if name == "bus_send":
             to_agent = args.get("to")
-            content = args.get("content")
+            content = args.get("message") or args.get("content") or args.get("text")
             topic = args.get("topic", "general")
             from_agent = args.get("from_agent") or getattr(self, "current_agent_id", "anonymous")
             conversation_id = args.get("conversation_id", "")
 
             if not to_agent or not content:
-                return {"error": "Missing 'to' or 'content'"}
+                return {"error": "Missing 'to' or 'message'"}
 
             # 1. Save to DB
             res = self.db.send_message(

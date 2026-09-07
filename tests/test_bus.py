@@ -241,3 +241,24 @@ def test_dsh_auto_registration_and_defaults(temp_db, monkeypatch):
     assert inbox[0]["from"] == "deepseek-coder"
     assert inbox[0]["content"] == "Message from DSH"
 
+
+def test_bus_send_message_param(temp_db):
+    server = MCPServer(db=temp_db)
+    # Using 'message' instead of 'content'
+    call_resp = server.handle_request({
+        "jsonrpc": "2.0",
+        "id": 11,
+        "method": "tools/call",
+        "params": {
+            "name": "bus_send",
+            "arguments": {
+                "to": "deepseek-coder",
+                "message": "Simple message with 1 tool call"
+            }
+        }
+    })
+    assert call_resp["result"]["isError"] is False
+    inbox = temp_db.fetch_inbox("deepseek-coder", unread_only=True)
+    assert len(inbox) == 1
+    assert inbox[0]["content"] == "Simple message with 1 tool call"
+

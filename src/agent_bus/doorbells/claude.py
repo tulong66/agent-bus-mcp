@@ -32,9 +32,9 @@ class ClaudeDoorbell(FileTouchDoorbell):
             from_agent = agent_info.get("from_agent", "agent-bus")
             topic = agent_info.get("topic", "general")
             prompt_text = (
-                f"【消息总线提醒】收到来自 {from_agent} 的新消息（主题: {topic}）：\n\n"
+                f"【来自 {from_agent} 的消息】（主题: {topic}）：\n\n"
                 f"{message_content}\n\n"
-                f"（提示：你可以直接调用原生 MCP 工具 bus_inbox 查看完整信箱，执行任务后通过 bus_send 汇报！）"
+                f"（提示：消息已直接注入当前上下文，无需调用 bus_inbox。任务完成后调用 bus_send(to='{from_agent}', message='...') 回复即可）"
             )
 
             s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
