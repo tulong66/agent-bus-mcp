@@ -1,9 +1,12 @@
 """
 Doorbell driver for DeepSeek Harness (DSH).
-Supports file touch and Unix domain socket / FIFO signaling.
+Supports native Unix domain socket prompt injection (~/.dsh-tui/inject/*.sock),
+file touch, and FIFO signaling.
 """
 
 import os
+import json
+import socket
 from pathlib import Path
 from typing import Dict, Any
 from .file_touch import FileTouchDoorbell
@@ -14,9 +17,41 @@ class DSHDoorbell(FileTouchDoorbell):
         ok = super().ring(agent_info, message_content)
 
         agent_id = agent_info.get("agent_id", "deepseek-coder")
-        target = agent_info.get("doorbell_target", "")
+        from_agent = agent_info.get("from_agent", "another agent")
+        topic = agent_info.get("topic", "general")
 
-        # Check explicit or default FIFO candidates
+        # 1. Native DSH-TUI Socket Wakeup Channel
+        inject_servers_file = Path.home() / ".dsh-tui" / "inject" / "servers.json"
+        if inject_servers_file.exists():
+            try:
+                with open(inject_servers_file, "r", encoding="utf-8") as f:
+                    servers = json.load(f)
+                if isinstance(servers, list):
+                    for server in servers:
+                        pid = server.get("pid")
+                        sock_p = server.get("socketPath")
+                        if pid and sock_p and Path(sock_p).exists():
+                            try:
+                                os.kill(pid, 0)  # probe if alive
+                            except OSError:
+                                continue
+
+                            try:
+                                s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                                s.settimeout(2.0)
+                                s.connect(sock_p)
+                                prompt_text = f"收到来自 {from_agent} 的新消息（主题: {topic}）。请调用 bus_inbox(wait=false) 查收并处理。"
+                                s.sendall((json.dumps({"type": "prompt.append", "text": prompt_text}) + "\n").encode("utf-8"))
+                                s.sendall((json.dumps({"type": "command.execute", "command": "prompt.submit"}) + "\n").encode("utf-8"))
+                                s.close()
+                                return True
+                            except Exception:
+                                pass
+            except Exception:
+                pass
+
+        # 2. Check explicit or default FIFO candidates fallback
+        target = agent_info.get("doorbell_target", "")
         fifo_candidates = []
         if target:
             fifo_candidates.append(Path(target))
@@ -34,3 +69,4 @@ class DSHDoorbell(FileTouchDoorbell):
                     pass
 
         return ok
+
