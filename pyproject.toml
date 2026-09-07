@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-bus-mcp"
+version = "1.0.0"
+description = "Universal Multi-Agent Communication Bus MCP Server for Claude Code, Codex, Antigravity, and DSH"
+readme = "README.md"
+authors = [{ name = "DeepZen Team" }]
+license = { text = "MIT" }
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+agent-bus = "agent_bus.cli:main"
+agent-bus-server = "agent_bus.server:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
