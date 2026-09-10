@@ -71,13 +71,18 @@ class MCPServer:
                 )
                 return
 
-            # 3. Antigravity Lead Detection
+            # 3. Antigravity Detection
             sc_custom = Path.home() / ".superconductor" / "hooks" / "antigravity-customization"
             if "ANTIGRAVITY" in os.environ or sc_custom.exists():
-                self.current_agent_id = "antigravity-lead"
-                bell_path = Path.home() / ".agent-bus" / "doorbells" / "antigravity-lead.bell"
+                cwd = str(Path.cwd())
+                term_id = os.environ.get("SUPERCONDUCTOR_TERMINAL_ID", "")
+                if "lighter-live-trader" in cwd or term_id == "f988ef97-ee32-43fa-924c-73a9b737e537":
+                    self.current_agent_id = "antigravity-live"
+                else:
+                    self.current_agent_id = "antigravity-lead"
+                bell_path = Path.home() / ".agent-bus" / "doorbells" / f"{self.current_agent_id}.bell"
                 self.db.register_agent(
-                    agent_id="antigravity-lead",
+                    agent_id=self.current_agent_id,
                     framework="antigravity",
                     doorbell_type="file",
                     doorbell_target=str(bell_path)
