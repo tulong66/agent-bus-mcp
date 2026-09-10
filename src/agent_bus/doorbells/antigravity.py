@@ -3,6 +3,7 @@ Doorbell driver for Antigravity (Google Gemini CLI / IDE).
 Handles reactive wakeup trigger and legacy Superconductor inbox bridge.
 """
 
+import os
 import time
 from pathlib import Path
 from typing import Dict, Any
