@@ -262,3 +262,25 @@ def test_bus_send_message_param(temp_db):
     assert len(inbox) == 1
     assert inbox[0]["content"] == "Simple message with 1 tool call"
 
+
+def test_bus_send_content_and_message_prefers_longer(temp_db):
+    server = MCPServer(db=temp_db)
+    # Both content (long) and message (short title) provided
+    call_resp = server.handle_request({
+        "jsonrpc": "2.0",
+        "id": 12,
+        "method": "tools/call",
+        "params": {
+            "name": "bus_send",
+            "arguments": {
+                "to": "deepseek-coder",
+                "message": "Short title",
+                "content": "This is the long detailed body content with specs."
+            }
+        }
+    })
+    assert call_resp["result"]["isError"] is False
+    inbox = temp_db.fetch_inbox("deepseek-coder", unread_only=True)
+    assert len(inbox) == 1
+    assert inbox[0]["content"] == "This is the long detailed body content with specs."
+

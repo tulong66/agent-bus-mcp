@@ -245,7 +245,9 @@ class MCPServer:
     def handle_tool_call(self, name: str, args: dict) -> dict:
         if name == "bus_send":
             to_agent = args.get("to")
-            content = args.get("message") or args.get("content") or args.get("text")
+            # If both content and message are provided, pick the longer one (prevents title overwriting body)
+            c_cands = [c for c in [args.get("content"), args.get("message"), args.get("text")] if c and isinstance(c, str)]
+            content = max(c_cands, key=len) if c_cands else None
             topic = args.get("topic", "general")
             from_agent = args.get("from_agent") or getattr(self, "current_agent_id", "anonymous")
             conversation_id = args.get("conversation_id", "")
