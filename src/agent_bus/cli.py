@@ -86,23 +86,39 @@ def cmd_register(args, db: Database):
 
 
 def cmd_listen(args, db: Database):
-    bell_file = Path.home() / ".agent-bus" / "doorbells" / f"{args.agent}.bell"
-    inbox_file = Path.home() / ".agent-bus" / "inbox" / f"{args.agent}.msg"
+    agent_id = args.agent
+    bell_file = Path.home() / ".agent-bus" / "doorbells" / f"{agent_id}.bell"
+    inbox_file = Path.home() / ".agent-bus" / "inbox" / f"{agent_id}.msg"
 
-    start_mtime = 0.0
-    if bell_file.exists():
-        start_mtime = bell_file.stat().st_mtime
+    bell_file.parent.mkdir(parents=True, exist_ok=True)
+    if not bell_file.exists():
+        bell_file.touch()
+
+    start_mtime = bell_file.stat().st_mtime
 
     timeout = args.timeout
     start_t = time.time()
-    print(f"👂 Listening for doorbells on [{args.agent}] (timeout {timeout}s)...")
+    print(f"👂 Listening for doorbells on [{agent_id}] (timeout {timeout}s)...", flush=True)
     while time.time() - start_t < timeout:
         if bell_file.exists() and bell_file.stat().st_mtime > start_mtime:
-            print(f"🔔 Doorbell rung for [{args.agent}]!")
+            print(f"🔔 Doorbell rung for [{agent_id}]!", flush=True)
+            msgs = db.fetch_inbox(agent_name=agent_id, unread_only=True, mark_read=True)
+            if msgs:
+                for m in msgs:
+                    ts_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(m['created_at']))
+                    print(f"\n【来自 {m['from']} 的实时消息】（主题: {m['topic']} | 时间: {ts_str}）\n{m['content']}", flush=True)
+            elif inbox_file.exists():
+                try:
+                    content = inbox_file.read_text(encoding="utf-8").strip()
+                    if content:
+                        print(f"\n【收件箱内容】：\n{content}", flush=True)
+                except Exception:
+                    pass
             sys.exit(0)
-        time.sleep(0.15)
-    print("⏰ Listen timeout.")
+        time.sleep(0.1)
+    print("⏰ Listen timeout.", flush=True)
     sys.exit(1)
+
 
 
 def main():

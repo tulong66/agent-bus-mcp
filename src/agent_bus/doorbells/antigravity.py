@@ -10,16 +10,20 @@ from .file_touch import FileTouchDoorbell
 
 class AntigravityDoorbell(FileTouchDoorbell):
     def ring(self, agent_info: Dict[str, Any], message_content: str) -> bool:
-        # 1. Base file touch in ~/.agent-bus
+        agent_id = agent_info.get("agent_id", "antigravity-lead")
+
+        # 1. Base file touch in ~/.agent-bus/doorbells/{agent_id}.bell and inbox/{agent_id}.msg
         ok = super().ring(agent_info, message_content)
 
-        # 2. Bridge to Superconductor inbox if active
-        sc_inbox = Path.home() / ".superconductor" / "inbox" / "antigravity.msg"
-        try:
-            sc_inbox.parent.mkdir(parents=True, exist_ok=True)
-            with open(sc_inbox, "a", encoding="utf-8") as f:
-                f.write(f"{message_content}\n")
-        except Exception:
-            pass
+        # 2. Trigger FIFO if active
+        fifo_path = Path.home() / ".agent-bus" / "doorbells" / f"{agent_id}.fifo"
+        if fifo_path.exists():
+            try:
+                fd = os.open(str(fifo_path), os.O_WRONLY | os.O_NONBLOCK)
+                os.write(fd, b"WAKE\n")
+                os.close(fd)
+            except OSError:
+                pass
 
         return ok
+
